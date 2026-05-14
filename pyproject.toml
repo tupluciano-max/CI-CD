@@ -8,3 +8,7 @@ name = "mi-calculadora"
 version = "0.1.0"
 description = "Proyecto de ejemplo para clase de CI/CD"
 requires-python = ">=3.9"
+
+# Le decimos exactamente qué módulo empaquetar (solo main.py, no los tests)
+[tool.setuptools]
+py-modules = ["main"]
