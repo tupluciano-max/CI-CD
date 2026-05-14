@@ -98,7 +98,7 @@ jobs:
 
       # Cache usando la versión de Python en la key
       - name: Cachear dependencias pip
-        uses: actions/cache@v3
+        uses: actions/cache@v
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
@@ -195,7 +195,7 @@ jobs:
       # Concepto: los jobs no comparten sistema de archivos,
       # los artefactos son la forma de pasar archivos entre jobs.
       - name: Guardar artefacto del build
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dist-package
           path: dist/
@@ -228,7 +228,7 @@ jobs:
 
       # Descargar el artefacto generado en el job "build"
       - name: Descargar artefacto del build
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: dist-package
           path: dist/
