@@ -1,0 +1,280 @@
+# =============================================================
+# CI PIPELINE COMPLETO - Material educativo
+# Materia: DevOps / Integración Continua
+# =============================================================
+# ¿Qué es este archivo?
+# Un pipeline de CI (Continuous Integration) que se ejecuta
+# automáticamente en GitHub Actions cada vez que se hace
+# un push o pull request al repositorio.
+# =============================================================
+
+name: CI Pipeline Completo
+
+# ---------------------------------------------------------
+# DISPARADORES: ¿Cuándo se ejecuta este pipeline?
+# ---------------------------------------------------------
+on:
+  push:
+    branches: [main, develop]   # Solo en estas ramas
+  pull_request:
+    branches: [main]            # Solo PRs que apunten a main
+
+# =============================================================
+# JOBS: Cada job es un conjunto de pasos que corren
+# en una máquina virtual limpia e independiente.
+# Los jobs pueden correr en paralelo o en secuencia.
+# =============================================================
+jobs:
+
+  # -----------------------------------------------------------
+  # JOB 1: LINT - Verificar calidad y estilo del código
+  # Enseña: CI no solo testea, también cuida la calidad
+  # -----------------------------------------------------------
+  lint:
+    name: "🔍 Verificar calidad de código"
+    runs-on: ubuntu-latest
+
+    steps:
+      # Paso 1: Descargar el código del repositorio
+      - name: Clonar el repositorio
+        uses: actions/checkout@v3
+
+      # Paso 2: Instalar Python en la máquina virtual
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      # Paso 3: Cache de dependencias
+      # Concepto: Evita reinstalar todo desde cero en cada ejecución.
+      # La "key" cambia solo si cambia requirements.txt → invalida el cache.
+      - name: Cachear dependencias pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # Paso 4: Instalar la herramienta de linting
+      - name: Instalar flake8
+        run: pip install flake8
+
+      # Paso 5: Ejecutar el linter
+      # flake8 detecta: errores de sintaxis, variables no usadas,
+      # líneas muy largas, imports mal ordenados, etc.
+      - name: Verificar estilo de código con flake8
+        run: |
+          flake8 . \
+            --max-line-length=88 \
+            --exclude=.git,__pycache__,.venv \
+            --statistics
+
+
+  # -----------------------------------------------------------
+  # JOB 2: TEST - Ejecutar pruebas en múltiples versiones
+  # Enseña: "Matrix strategy" para probar compatibilidad
+  # -----------------------------------------------------------
+  test:
+    name: "🧪 Pruebas (Python ${{ matrix.python-version }})"
+    runs-on: ubuntu-latest
+
+    # MATRIX STRATEGY: GitHub crea un job separado
+    # por cada combinación de valores. Aquí crea 3 jobs en paralelo.
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+      fail-fast: false  # Si falla una versión, las demás continúan
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v3
+
+      # Notar cómo usamos la variable de la matrix aquí ↓
+      - name: Configurar Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Cache usando la versión de Python en la key
+      - name: Cachear dependencias pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
+
+      # Instalar dependencias del proyecto + herramientas de testing
+      - name: Instalar dependencias
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-cov
+          # Si el proyecto tiene un requirements.txt, descomentá esta línea:
+          # pip install -r requirements.txt
+
+      # Ejecutar pruebas con reporte de cobertura
+      # --cov=.           : mide cobertura de todo el proyecto
+      # --cov-report=xml  : genera reporte en formato XML (para Codecov)
+      # --cov-report=term : muestra el reporte en consola
+      - name: Ejecutar pruebas con cobertura
+        run: |
+          pytest \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            -v
+
+      # Subir reporte de cobertura a Codecov (servicio externo gratuito)
+      # Muestra visualmente qué líneas están cubiertas por tests
+      - name: Subir reporte de cobertura a Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false   # No falla el pipeline si Codecov tiene problemas
+
+
+  # -----------------------------------------------------------
+  # JOB 3: SECURITY - Análisis de seguridad
+  # Enseña: DevSecOps, seguridad integrada en CI
+  # -----------------------------------------------------------
+  security:
+    name: "🔒 Análisis de seguridad"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      # Safety: detecta librerías con vulnerabilidades conocidas (CVEs)
+      - name: Escanear vulnerabilidades en dependencias
+        run: |
+          pip install safety
+          safety check --full-report
+
+      # Bandit: analiza el código buscando patrones inseguros
+      # Ejemplo: uso de eval(), contraseñas hardcodeadas, etc.
+      - name: Escanear código con Bandit
+        run: |
+          pip install bandit
+          bandit -r . -x ./.git,./tests --severity-level medium
+
+
+  # -----------------------------------------------------------
+  # JOB 4: BUILD - Construir el artefacto del proyecto
+  # Enseña: qué es un artefacto de CI y cómo compartirlo entre jobs
+  # -----------------------------------------------------------
+  build:
+    name: "📦 Construir artefacto"
+    runs-on: ubuntu-latest
+
+    # Este job espera a que test y lint pasen antes de correr
+    # Enseña: dependencias entre jobs con "needs"
+    needs: [lint, test]
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Instalar dependencias de build
+        run: pip install build
+
+      # Construir el paquete Python (genera archivos en dist/)
+      - name: Construir paquete
+        run: python -m build
+
+      # Guardar el artefacto para descargarlo o usarlo en deploy
+      # Concepto: los jobs no comparten sistema de archivos,
+      # los artefactos son la forma de pasar archivos entre jobs.
+      - name: Guardar artefacto del build
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-package
+          path: dist/
+          retention-days: 7   # Se elimina automáticamente después de 7 días
+
+
+  # -----------------------------------------------------------
+  # JOB 5: DEPLOY - Desplegar a producción
+  # Enseña: CD (Continuous Deployment), condiciones con "if"
+  # -----------------------------------------------------------
+  deploy:
+    name: "🚀 Deploy a producción"
+    runs-on: ubuntu-latest
+
+    # Solo se ejecuta si el build pasó
+    needs: [build, security]
+
+    # CONDICIÓN: Solo despliega si el push fue a la rama "main"
+    # En pull_requests NO despliega (github.ref sería refs/pull/...)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    # Entorno de GitHub: permite configurar secrets y reglas de protección
+    environment:
+      name: production
+      url: https://mi-aplicacion.ejemplo.com
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v3
+
+      # Descargar el artefacto generado en el job "build"
+      - name: Descargar artefacto del build
+        uses: actions/download-artifact@v3
+        with:
+          name: dist-package
+          path: dist/
+
+      # En un proyecto real, aquí iría el comando de deploy real.
+      # Ejemplos: ssh al servidor, push a Heroku, kubectl apply, etc.
+      # Los secrets se configuran en Settings > Secrets del repositorio.
+      - name: Desplegar aplicación
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}       # Secret configurado en GitHub
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          echo "✅ Iniciando deploy del commit ${{ github.sha }}"
+          echo "👤 Deploy iniciado por: ${{ github.actor }}"
+          echo "📦 Archivos a desplegar:"
+          ls dist/
+          # Aquí iría el comando real, por ejemplo:
+          # scp dist/* usuario@$DEPLOY_HOST:/app/
+          echo "🎉 Deploy completado exitosamente"
+
+      # Notificación al finalizar (solo si el deploy falló)
+      # Enseña: condiciones if: failure() / success() / always()
+      - name: Notificar fallo en deploy
+        if: failure()
+        run: |
+          echo "❌ El deploy falló. Revisar los logs del pipeline."
+          # En producción aquí iría una notificación real:
+          # curl -X POST $SLACK_WEBHOOK -d '{"text":"Deploy fallido!"}'
+
+
+# =============================================================
+# RESUMEN PEDAGÓGICO
+# =============================================================
+# Este pipeline enseña los siguientes conceptos:
+#
+# ✅ Disparadores (on: push, pull_request)
+# ✅ Jobs paralelos y secuenciales
+# ✅ Dependencias entre jobs (needs:)
+# ✅ Matrix strategy (múltiples versiones de Python)
+# ✅ Cache de dependencias
+# ✅ Linting (flake8)
+# ✅ Testing con cobertura (pytest-cov)
+# ✅ Análisis de seguridad (safety, bandit)
+# ✅ Artefactos (upload/download-artifact)
+# ✅ Deploy condicional (if: github.ref)
+# ✅ Secretos (secrets.DEPLOY_KEY)
+# ✅ Entornos de GitHub (environment:)
+# ✅ Condiciones de notificación (if: failure())
+# =============================================================
