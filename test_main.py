@@ -23,9 +23,9 @@ def test_divide():
     assert divide(3, 1) == 3
     with pytest.raises(ValueError):
         divide(5, 0)
-        
+
 
 def test_isString():
-    assert not isString(" ") 
-    assert not isString("Nombre3") 
+    assert not isString(" ")
+    assert not isString("Nombre3")
     assert isString("Nombre")
